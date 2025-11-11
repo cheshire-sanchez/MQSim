@@ -292,6 +292,51 @@ namespace SSD_Components
 					}
 					break;
 				}
+
+				case SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_PP_Die:
+				{
+				    std::vector<std::pair<flash_block_ID_type, unsigned int>> valid_blocks; // 存储<块ID, 所在PlaneID>
+				
+				    unsigned int target_channel = plane_address.ChannelID;
+				    unsigned int target_chip = plane_address.ChipID;
+				    unsigned int target_die = plane_address.DieID;
+				
+				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+				        NVM::FlashMemory::Physical_Page_Address current_plane_addr(
+				            target_channel, target_chip, target_die, plane_id, 0, 0
+				        );
+				        PlaneBookKeepingType* current_pbke = block_manager->Get_plane_bookkeeping_entry(current_plane_addr);
+					
+				        for (flash_block_ID_type block_id = 0; block_id < block_no_per_plane; block_id++) {
+				            if (current_pbke->Blocks[block_id].Current_page_write_index == pages_no_per_block &&
+				                current_pbke->Blocks[block_id].Invalid_page_count >= random_pp_threshold &&
+				                current_pbke->Ongoing_erase_operations.find(block_id) == current_pbke->Ongoing_erase_operations.end() &&
+				                is_safe_gc_wl_candidate(current_pbke, block_id)) {
+				                valid_blocks.emplace_back(block_id, plane_id); // 记录块ID和所在PlaneID
+				            }
+				        }
+				    }
+				
+				    // 若存在有效块，从整个Die的有效块中随机选择一个
+				    if (!valid_blocks.empty()) {
+				        size_t random_idx = random_generator.Uniform_uint(0, valid_blocks.size() - 1);
+				        gc_candidate_block_id = valid_blocks[random_idx].first;
+				        // 更新候选块所在的PlaneID（确保后续操作能准确定位物理地址）
+				        gc_candidate_plane_id = valid_blocks[random_idx].second;
+				    } else {
+				        // 若无有效块，沿用原逻辑在当前Plane内重试（作为降级方案）
+				        gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
+				        unsigned int repeat = 0;
+				        while ((pbke->Blocks[gc_candidate_block_id].Current_page_write_index < pages_no_per_block || 
+				                pbke->Blocks[gc_candidate_block_id].Invalid_page_count < random_pp_threshold || 
+				                !is_safe_gc_wl_candidate(pbke, gc_candidate_block_id)) && 
+				               repeat++ < block_no_per_plane) {
+				            gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
+				        }
+				    }
+				
+				    break;
+				}
 				
 				case SSD_Components::GC_Block_Selection_Policy_Type::FIFO:
 					gc_candidate_block_id = pbke->Block_usage_history.front();

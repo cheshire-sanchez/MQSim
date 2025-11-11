@@ -478,7 +478,49 @@ namespace SSD_Components
 						}
 						break;
 					}
+					case GC_Block_Selection_Policy_Type::RANDOM_P_Die://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
+					{
+						for (unsigned int i = 0; i <= page_no_per_block; i++) {
+							steadystate_block_status_probability.push_back(rho / (rho + std::pow(1 - rho, i)));
+							for (unsigned int j = i + 1; j <= page_no_per_block; j++) {
+								steadystate_block_status_probability[i] *= ((1 - rho) * j) / (rho + (1 - rho) * j);
+							}
+						}
+						for (int i = page_no_per_block; i > 0; i--) {
+							steadystate_block_status_probability[i] = steadystate_block_status_probability[i] - steadystate_block_status_probability[i - 1];
+						}
+						break;
+					}
 					case GC_Block_Selection_Policy_Type::RANDOM_PP://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
+					{
+						//initialize the pdf values 
+						for (unsigned int i = 0; i <= page_no_per_block; i++) {
+							steadystate_block_status_probability.push_back(0);
+						}
+
+						double rho = stat->Initial_occupancy_ratio * (1 - over_provisioning_ratio);
+						double S_rho_b = 0;
+						for (unsigned int j = GC_and_WL_Unit->Get_GC_policy_specific_parameter() + 1; j <= page_no_per_block; j++) {
+							S_rho_b += 1.0 / double(j);
+						}
+						double a_r = page_no_per_block - GC_and_WL_Unit->Get_GC_policy_specific_parameter() - page_no_per_block * S_rho_b;
+						double b_r = rho * S_rho_b + 1 - rho;
+						double c_r = -1 * rho / page_no_per_block;
+						double mu_b = (-1 * b_r + std::sqrt(b_r * b_r - 4 * a_r * c_r)) / (2 * a_r);//assume always rho < 1 - 1/b
+						for (int i = page_no_per_block; i >= 0; i--) {
+							if (i <= int(GC_and_WL_Unit->Get_GC_policy_specific_parameter())) {
+								steadystate_block_status_probability[i] = ((i + 1) * steadystate_block_status_probability[i + 1])
+									/ (i + (rho / (1 - rho - mu_b * (page_no_per_block * S_rho_b - page_no_per_block + GC_and_WL_Unit->Get_GC_policy_specific_parameter()))));
+							}
+							else if (i < int(page_no_per_block)) {
+								steadystate_block_status_probability[i] = double(page_no_per_block * mu_b) / double(i);
+							} else {
+								steadystate_block_status_probability[i] = mu_b;
+							}
+						}
+						break;
+					}
+					case GC_Block_Selection_Policy_Type::RANDOM_PP_Die://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
 					{
 						//initialize the pdf values 
 						for (unsigned int i = 0; i <= page_no_per_block; i++) {
