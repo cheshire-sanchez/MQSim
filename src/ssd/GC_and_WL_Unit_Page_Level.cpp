@@ -365,9 +365,9 @@ namespace SSD_Components
 			//	return;
 			//}
 			
-			NVM::FlashMemory::Physical_Page_Address gc_candidate_address(plane_address);
-			gc_candidate_address.BlockID = gc_candidate_block_id;
-			Block_Pool_Slot_Type* block = &pbke->Blocks[gc_candidate_block_id];
+			NVM::FlashMemory::Physical_Page_Address gc_candidate_address(target_channel, target_chip, target_die, gc_candidate_plane_id, gc_candidate_block_id, 0);
+			PlaneBookKeepingType* gc_candidate_pbke = block_manager->Get_plane_bookkeeping_entry(gc_candidate_address);
+			Block_Pool_Slot_Type* block = &gc_candidate_pbke->Blocks[gc_candidate_block_id];
 
 			//No invalid page to erase
 			if (block->Current_page_write_index == 0 || block->Invalid_page_count == 0) {
@@ -376,7 +376,7 @@ namespace SSD_Components
 			
 			//Run the state machine to protect against race condition
 			block_manager->GC_WL_started(gc_candidate_address);
-			pbke->Ongoing_erase_operations.insert(gc_candidate_block_id);
+			gc_candidate_pbke->Ongoing_erase_operations.insert(gc_candidate_block_id);
 			address_mapping_unit->Set_barrier_for_accessing_physical_block(gc_candidate_address);//Lock the block, so no user request can intervene while the GC is progressing
 			
 			//If there are ongoing requests targeting the candidate block, the gc execution should be postponed
@@ -384,7 +384,7 @@ namespace SSD_Components
 				Stats::Total_gc_executions++;
 				tsu->Prepare_for_transaction_submit();
 
-				NVM_Transaction_Flash_ER* gc_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, pbke->Blocks[gc_candidate_block_id].Stream_id, gc_candidate_address);
+				NVM_Transaction_Flash_ER* gc_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, block->Stream_id, gc_candidate_address);
 				//If there are some valid pages in block, then prepare flash transactions for page movement
 				if (block->Current_page_write_index - block->Invalid_page_count > 0) {
 					NVM_Transaction_Flash_RD* gc_read = NULL;
