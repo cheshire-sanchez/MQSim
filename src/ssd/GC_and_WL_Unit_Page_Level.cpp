@@ -339,9 +339,19 @@ namespace SSD_Components
 				}
 				
 				case SSD_Components::GC_Block_Selection_Policy_Type::FIFO:
+				{
 					gc_candidate_block_id = pbke->Block_usage_history.front();
 					pbke->Block_usage_history.pop();
 					break;
+				}
+
+				case SSD_Components::GC_Block_Selection_Policy_Type::FIFO_Die:
+				{
+				    gc_candidate_block_id = pbke->Block_usage_history.front();
+					gc_candidate_plane_id = plane_address.PlaneID;
+					pbke->Block_usage_history.pop();
+					break;
+				}
 				default:
 					break;
 			}
