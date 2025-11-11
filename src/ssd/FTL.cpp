@@ -464,6 +464,7 @@ namespace SSD_Components
 						break;
 					}
 					case GC_Block_Selection_Policy_Type::RANDOM:
+					case GC_Block_Selection_Policy_Type::RANDOM_Die:
 					case GC_Block_Selection_Policy_Type::RANDOM_P://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
 					{
 						for (unsigned int i = 0; i <= page_no_per_block; i++) {

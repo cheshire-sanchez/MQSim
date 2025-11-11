@@ -52,7 +52,7 @@ namespace SSD_Components
 			}//限制GC并发数
 
 			switch (block_selection_policy) {
-				
+
 				case SSD_Components::GC_Block_Selection_Policy_Type::GREEDY://Find the set of blocks with maximum number of invalid pages and no free pages
 				{
 					gc_candidate_block_id = 0;
@@ -179,6 +179,51 @@ namespace SSD_Components
 						gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
 					}
 					break;
+				}
+
+				case SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_Die:
+				{
+				    // 收集当前Die内所有符合条件的块（同Channel、Chip、Die下的所有Plane）
+				    std::vector<std::pair<flash_block_ID_type, unsigned int>> valid_blocks; // 存储<块ID, 所在PlaneID>
+				
+				    // 获取当前Die的固定信息（从输入的plane_address继承）
+				    unsigned int target_channel = plane_address.ChannelID;
+				    unsigned int target_chip = plane_address.ChipID;
+				    unsigned int target_die = plane_address.DieID;
+				
+				    // 遍历当前Die下的所有Plane
+				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+				        // 构建当前Plane的地址
+				        NVM::FlashMemory::Physical_Page_Address current_plane_addr(
+				            target_channel, target_chip, target_die, plane_id, 0, 0
+				        );
+				        PlaneBookKeepingType* current_pbke = block_manager->Get_plane_bookkeeping_entry(current_plane_addr);
+					
+				        // 遍历当前Plane下的所有Block，检查是否符合条件
+				        for (flash_block_ID_type block_id = 0; block_id < block_no_per_plane; block_id++) {
+				            if (current_pbke->Ongoing_erase_operations.find(block_id) == current_pbke->Ongoing_erase_operations.end() &&
+				                is_safe_gc_wl_candidate(current_pbke, block_id)) {
+				                valid_blocks.emplace_back(block_id, plane_id); // 记录块ID和所在PlaneID
+				            }
+				        }
+				    }
+				
+				    // 如果没有符合条件的块，沿用原逻辑的重试保护（避免空指针）
+				    if (valid_blocks.empty()) {
+				        gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
+				        unsigned int repeat = 0;
+				        while (!is_safe_gc_wl_candidate(pbke, gc_candidate_block_id) && repeat++ < block_no_per_plane) {
+				            gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
+				        }
+				    } else {
+				        // 从有效块中随机选择一个
+				        size_t random_idx = random_generator.Uniform_uint(0, valid_blocks.size() - 1);
+				        gc_candidate_block_id = valid_blocks[random_idx].first;
+				        // 更新候选块所在的PlaneID（用于后续构建物理地址）
+				        gc_candidate_plane_id = valid_blocks[random_idx].second;
+				    }
+				
+				    break;
 				}
 				case SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_P:
 				{
