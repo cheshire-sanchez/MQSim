@@ -44,6 +44,7 @@ namespace SSD_Components
 	{
 		if (free_block_pool_size < block_pool_gc_threshold) {
 			flash_block_ID_type gc_candidate_block_id = block_manager->Get_the_coldest_block_id(plane_address);
+			flash_plane_ID_type gc_candidate_plane_id = block_manager->Get_the_coldest_plane_id(plane_address);
 			PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_address);
 
 			if (pbke->Ongoing_erase_operations.size() >= max_ongoing_gc_reqs_per_plane) {

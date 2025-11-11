@@ -181,7 +181,7 @@ namespace SSD_Components
 		unsigned int coldest_erase_count = UINT32_MAX;
 		PlaneBookKeepingType *plane_record = &plane_manager[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
 		for (unsigned int i = 0; i < block_no_per_plane; i++) {
-			for (unsigned int j = 1; j < block_no_per_plane; j++) {
+			for (unsigned int j = 0; j < block_no_per_plane; j++) {
 				if (plane_record->Blocks[j].Erase_count < coldest_erase_count) {
 					min_erased_block = j;
 					coldest_erase_count = plane_record->Blocks[j].Erase_count;
@@ -190,6 +190,23 @@ namespace SSD_Components
 		}
 		return min_erased_block;
 	}
+
+	flash_plane_ID_type Flash_Block_Manager_Base::Get_the_coldest_plane_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
+	{
+		unsigned int min_erased_plane = 0;
+		unsigned int coldest_erase_count = UINT32_MAX;
+		PlaneBookKeepingType *plane_record = &plane_manager[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
+		for (unsigned int i = 0; i < block_no_per_plane; i++) {
+			for (unsigned int j = 0; j < block_no_per_plane; j++) {
+				if (plane_record->Blocks[j].Erase_count < coldest_erase_count) {
+					min_erased_plane = i;
+					coldest_erase_count = plane_record->Blocks[j].Erase_count;
+				}
+			}
+		}
+		return min_erased_plane;
+	}
+
 
 	PlaneBookKeepingType* Flash_Block_Manager_Base::Get_plane_bookkeeping_entry(const NVM::FlashMemory::Physical_Page_Address& plane_address)
 	{
