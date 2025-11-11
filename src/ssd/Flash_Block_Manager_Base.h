@@ -85,6 +85,10 @@ namespace SSD_Components
 		virtual unsigned int Get_pool_size(const NVM::FlashMemory::Physical_Page_Address& plane_address) = 0;
 		flash_block_ID_type Get_coldest_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		unsigned int Get_min_max_erase_difference(const NVM::FlashMemory::Physical_Page_Address& plane_address);
+		unsigned int Get_max_erase_plane_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
+		unsigned int Get_max_erase_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
+		unsigned int Get_min_erase_plane_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
+		unsigned int Get_min_erase_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		void Set_GC_and_WL_Unit(GC_and_WL_Unit_Base* );
 		PlaneBookKeepingType* Get_plane_bookkeeping_entry(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		bool Block_has_ongoing_gc_wl(const NVM::FlashMemory::Physical_Page_Address& block_address);//Checks if there is an ongoing gc for block_address

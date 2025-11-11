@@ -244,60 +244,107 @@ namespace SSD_Components
 
 	inline bool GC_and_WL_Unit_Base::check_static_wl_required(const NVM::FlashMemory::Physical_Page_Address plane_address)
 	{
-		return static_wearleveling_enabled && (block_manager->Get_min_max_erase_difference(plane_address) >= static_wearleveling_threshold);
+		return static_wearleveling_enabled && (block_manager->Get_min_max_erase_difference(plane_address) >= static_wearleveling_threshold) && (block_manager->Get_min_erase_plane_id(plane_address) == plane_address.PlaneID);
 	}
 
 	void GC_and_WL_Unit_Base::run_static_wearleveling(const NVM::FlashMemory::Physical_Page_Address plane_address)
 	{
-		PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_address);
-		flash_block_ID_type wl_candidate_block_id = block_manager->Get_coldest_block_id(plane_address);
-		if (!is_safe_gc_wl_candidate(pbke, wl_candidate_block_id)) {
-			return;
-		}
+	    PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_address);
+	    flash_block_ID_type wl_candidate_block_id = block_manager->Get_coldest_block_id(plane_address);
+	    if (!is_safe_gc_wl_candidate(pbke, wl_candidate_block_id)) {
+	        return;
+	    }
 
-		NVM::FlashMemory::Physical_Page_Address wl_candidate_address(plane_address);
-		wl_candidate_address.BlockID = wl_candidate_block_id;
-		Block_Pool_Slot_Type* block = &pbke->Blocks[wl_candidate_block_id];
+	    // 获取目标Plane ID（同Die内擦除次数最少的Plane）和目标Block ID（目标Plane内擦除次数最少的Block）
+	    unsigned int target_plane_id = block_manager->Get_min_erase_plane_id(plane_address);
+	    flash_block_ID_type target_block_id = block_manager->Get_min_erase_block_id(plane_address);
 
-		//Run the state machine to protect against race condition
-		block_manager->GC_WL_started(wl_candidate_block_id);
-		pbke->Ongoing_erase_operations.insert(wl_candidate_block_id);
-		address_mapping_unit->Set_barrier_for_accessing_physical_block(wl_candidate_address);//Lock the block, so no user request can intervene while the GC is progressing
-		if (block_manager->Can_execute_gc_wl(wl_candidate_address)) {//If there are ongoing requests targeting the candidate block, the gc execution should be postponed
-			Stats::Total_wl_executions++;
-			tsu->Prepare_for_transaction_submit();
+	    // 源块地址（待迁移的冷块）
+	    NVM::FlashMemory::Physical_Page_Address wl_source_address(plane_address);
+	    wl_source_address.BlockID = wl_candidate_block_id;
+	    Block_Pool_Slot_Type* source_block = &pbke->Blocks[wl_candidate_block_id];
 
-			NVM_Transaction_Flash_ER* wl_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, pbke->Blocks[wl_candidate_block_id].Stream_id, wl_candidate_address);
-			if (block->Current_page_write_index - block->Invalid_page_count > 0) {//If there are some valid pages in block, then prepare flash transactions for page movement
-				NVM_Transaction_Flash_RD* wl_read = NULL;
-				NVM_Transaction_Flash_WR* wl_write = NULL;
-				for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
-					if (block_manager->Is_page_valid(block, pageID)) {
-						Stats::Total_page_movements_for_gc;
-						wl_candidate_address.PageID = pageID;
-						if (use_copyback) {
-							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-								NO_LPA, address_mapping_unit->Convert_address_to_ppa(wl_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-							wl_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
-							tsu->Submit_transaction(wl_write);
-						} else {
-							wl_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-								NO_LPA, address_mapping_unit->Convert_address_to_ppa(wl_candidate_address), wl_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-								NO_LPA, NO_PPA, wl_candidate_address, NULL, 0, wl_read, 0, INVALID_TIME_STAMP);
-							wl_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
-							wl_write->RelatedErase = wl_erase_tr;
-							wl_read->RelatedWrite = wl_write;
-							tsu->Submit_transaction(wl_read);//Only the read transaction would be submitted. The Write transaction is submitted when the read transaction is finished and the LPA of the target page is determined
-						}
-						wl_erase_tr->Page_movement_activities.push_back(wl_write);
-					}
-				}
-			}
-			block->Erase_transaction = wl_erase_tr;
-			tsu->Submit_transaction(wl_erase_tr);
+	    // 目标块地址（新位置：Channel、Chip、Die与原地址相同，Plane和Block为新获取的值）
+	    NVM::FlashMemory::Physical_Page_Address wl_target_address(plane_address);
+	    wl_target_address.PlaneID = target_plane_id;
+	    wl_target_address.BlockID = target_block_id;
 
-			tsu->Schedule();
-		}
+	    // 获取目标Plane的记账信息
+	    PlaneBookKeepingType* target_pbke = block_manager->Get_plane_bookkeeping_entry(wl_target_address);
+	    Block_Pool_Slot_Type* target_block = &target_pbke->Blocks[target_block_id];
+
+	    // 状态机保护：标记源块开始WL操作
+	    block_manager->GC_WL_started(wl_source_address);
+	    pbke->Ongoing_erase_operations.insert(wl_candidate_block_id);
+	    address_mapping_unit->Set_barrier_for_accessing_physical_block(wl_source_address);//锁定源块
+
+	    if (block_manager->Can_execute_gc_wl(wl_source_address)) {
+	        Stats::Total_wl_executions++;
+	        tsu->Prepare_for_transaction_submit();
+
+	        // 创建源块的擦除事务（迁移完成后擦除源块）
+	        NVM_Transaction_Flash_ER* wl_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, source_block->Stream_id, wl_source_address);
+
+	        // 迁移源块中的有效页到目标块
+	        if (source_block->Current_page_write_index - source_block->Invalid_page_count > 0) {
+	            NVM_Transaction_Flash_RD* wl_read = NULL;
+	            NVM_Transaction_Flash_WR* wl_write = NULL;
+
+	            for (flash_page_ID_type pageID = 0; pageID < source_block->Current_page_write_index; pageID++) {
+	                if (block_manager->Is_page_valid(source_block, pageID)) {
+	                    Stats::Total_page_movements_for_gc++; 
+
+	                    wl_source_address.PageID = pageID;
+
+	                    wl_target_address.PageID = target_block->Current_page_write_index;
+
+	                    if (use_copyback) {
+	                        wl_write = new NVM_Transaction_Flash_WR(
+	                            Transaction_Source_Type::GC_WL, 
+	                            source_block->Stream_id, 
+	                            sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+	                            NO_LPA, 
+	                            address_mapping_unit->Convert_address_to_ppa(wl_source_address), // 源地址
+	                            wl_target_address, // 目标地址
+	                            NULL, 0, NULL, 0, INVALID_TIME_STAMP
+	                        );
+	                        wl_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
+	                        tsu->Submit_transaction(wl_write);
+	                    } else {
+	                        wl_read = new NVM_Transaction_Flash_RD(
+	                            Transaction_Source_Type::GC_WL, 
+	                            source_block->Stream_id, 
+	                            sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+	                            NO_LPA, 
+	                            address_mapping_unit->Convert_address_to_ppa(wl_source_address), 
+	                            wl_source_address, 
+	                            NULL, 0, NULL, 0, INVALID_TIME_STAMP
+	                        );
+
+	                        wl_write = new NVM_Transaction_Flash_WR(
+	                            Transaction_Source_Type::GC_WL, 
+	                            source_block->Stream_id, 
+	                            sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+	                            NO_LPA, 
+	                            NO_PPA, 
+	                            wl_target_address, // 目标地址
+	                            NULL, 0, wl_read, 0, INVALID_TIME_STAMP
+	                        );
+	                        wl_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
+	                        wl_write->RelatedErase = wl_erase_tr;
+	                        wl_read->RelatedWrite = wl_write;
+	                        tsu->Submit_transaction(wl_read);
+	                    }
+
+	                    wl_erase_tr->Page_movement_activities.push_back(wl_write);
+	                    target_block->Current_page_write_index++; // 目标块写入索引后移
+	                }
+	            }
+	        }
+
+	        source_block->Erase_transaction = wl_erase_tr;
+	        tsu->Submit_transaction(wl_erase_tr);
+	        tsu->Schedule();
+	    }
 	}
 }

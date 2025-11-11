@@ -145,20 +145,124 @@ namespace SSD_Components
 
 	unsigned int Flash_Block_Manager_Base::Get_min_max_erase_difference(const NVM::FlashMemory::Physical_Page_Address& plane_address)
 	{
-		unsigned int min_erased_block = 0;
-		unsigned int max_erased_block = 0;
-		PlaneBookKeepingType *plane_record = &plane_manager[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
+	unsigned int channel_id = plane_address.ChannelID;
+    unsigned int chip_id = plane_address.ChipID;
+    unsigned int die_id = plane_address.DieID;
+    PlaneBookKeepingType* first_plane = &plane_manager[channel_id][chip_id][die_id][0];
+    unsigned int min_erase_count = first_plane->Blocks[0].Erase_count;
+    unsigned int max_erase_count = first_plane->Blocks[0].Erase_count;
 
-		for (unsigned int i = 1; i < block_no_per_plane; i++) {
-			if (plane_record->Blocks[i].Erase_count > plane_record->Blocks[max_erased_block].Erase_count) {
-				max_erased_block = i;
-			}
-			if (plane_record->Blocks[i].Erase_count < plane_record->Blocks[min_erased_block].Erase_count) {
-				min_erased_block = i;
-			}
-		}
+    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+        PlaneBookKeepingType* plane_record = &plane_manager[channel_id][chip_id][die_id][plane_id];
+        
+        for (unsigned int block_id = 0; block_id < block_no_per_plane; block_id++) {
+            unsigned int current_erase_count = plane_record->Blocks[block_id].Erase_count;
 
-		return max_erased_block - min_erased_block;
+            if (current_erase_count < min_erase_count) {
+                min_erase_count = current_erase_count;
+            }
+            if (current_erase_count > max_erase_count) {
+                max_erase_count = current_erase_count;
+            }
+        }
+    }
+    return max_erase_count - min_erase_count;
+	}
+	
+	unsigned int Flash_Block_Manager_Base::Get_max_erase_plane_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
+	{
+	unsigned int channel_id = plane_address.ChannelID;
+    unsigned int chip_id = plane_address.ChipID;
+    unsigned int die_id = plane_address.DieID;
+    PlaneBookKeepingType* first_plane = &plane_manager[channel_id][chip_id][die_id][0];
+    unsigned int max_erase_count = first_plane->Blocks[0].Erase_count;
+	unsigned int max_erase_plane_id = 0;
+
+    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+        PlaneBookKeepingType* plane_record = &plane_manager[channel_id][chip_id][die_id][plane_id];
+        
+        for (unsigned int block_id = 0; block_id < block_no_per_plane; block_id++) {
+            unsigned int current_erase_count = plane_record->Blocks[block_id].Erase_count;
+
+            if (current_erase_count > max_erase_count) {
+                max_erase_count = current_erase_count;
+				max_erase_plane_id = plane_id;
+            }
+        }
+    }
+    return max_erase_plane_id;
+	}
+
+	unsigned int Flash_Block_Manager_Base::Get_max_erase_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
+	{
+	unsigned int channel_id = plane_address.ChannelID;
+    unsigned int chip_id = plane_address.ChipID;
+    unsigned int die_id = plane_address.DieID;
+    PlaneBookKeepingType* first_plane = &plane_manager[channel_id][chip_id][die_id][0];
+    unsigned int max_erase_count = first_plane->Blocks[0].Erase_count;
+	unsigned int max_erase_block_id = 0;
+
+    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+        PlaneBookKeepingType* plane_record = &plane_manager[channel_id][chip_id][die_id][plane_id];
+        
+        for (unsigned int block_id = 0; block_id < block_no_per_plane; block_id++) {
+            unsigned int current_erase_count = plane_record->Blocks[block_id].Erase_count;
+
+            if (current_erase_count > max_erase_count) {
+                max_erase_count = current_erase_count;
+				max_erase_block_id = block_id;
+            }
+        }
+    }
+    return max_erase_block_id;
+	}
+	
+	unsigned int Flash_Block_Manager_Base::Get_min_erase_plane_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
+	{
+	unsigned int channel_id = plane_address.ChannelID;
+    unsigned int chip_id = plane_address.ChipID;
+    unsigned int die_id = plane_address.DieID;
+    PlaneBookKeepingType* first_plane = &plane_manager[channel_id][chip_id][die_id][0];
+    unsigned int min_erase_count = first_plane->Blocks[0].Erase_count;
+	unsigned int min_erase_plane_id = 0;
+
+    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+        PlaneBookKeepingType* plane_record = &plane_manager[channel_id][chip_id][die_id][plane_id];
+        
+        for (unsigned int block_id = 0; block_id < block_no_per_plane; block_id++) {
+            unsigned int current_erase_count = plane_record->Blocks[block_id].Erase_count;
+
+            if (current_erase_count < min_erase_count) {
+                min_erase_count = current_erase_count;
+				min_erase_plane_id = plane_id;
+            }
+        }
+    }
+    return min_erase_plane_id;
+	}
+	
+	unsigned int Flash_Block_Manager_Base::Get_min_erase_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
+	{
+	unsigned int channel_id = plane_address.ChannelID;
+    unsigned int chip_id = plane_address.ChipID;
+    unsigned int die_id = plane_address.DieID;
+    PlaneBookKeepingType* first_plane = &plane_manager[channel_id][chip_id][die_id][0];
+    unsigned int min_erase_count = first_plane->Blocks[0].Erase_count;
+	unsigned int min_erase_block_id = 0;
+
+    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+        PlaneBookKeepingType* plane_record = &plane_manager[channel_id][chip_id][die_id][plane_id];
+        
+        for (unsigned int block_id = 0; block_id < block_no_per_plane; block_id++) {
+            unsigned int current_erase_count = plane_record->Blocks[block_id].Erase_count;
+
+            if (current_erase_count > min_erase_count) {
+                min_erase_count = current_erase_count;
+				min_erase_block_id = plane_id;
+            }
+        }
+    }
+    return min_erase_block_id;
 	}
 
 	flash_block_ID_type Flash_Block_Manager_Base::Get_coldest_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address)
