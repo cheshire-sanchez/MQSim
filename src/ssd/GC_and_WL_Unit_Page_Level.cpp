@@ -39,7 +39,9 @@ namespace SSD_Components
 
 		return false;
 	}
-
+	unsigned int target_channel = plane_address.ChannelID;
+	unsigned int target_chip = plane_address.ChipID;
+	unsigned int target_die = plane_address.DieID;
 	void GC_and_WL_Unit_Page_Level::Check_gc_required(const unsigned int free_block_pool_size, const NVM::FlashMemory::Physical_Page_Address& plane_address)
 	{
 		if (free_block_pool_size < block_pool_gc_threshold) {
@@ -119,10 +121,6 @@ namespace SSD_Components
 				{
     				std::vector<std::pair<flash_block_ID_type, NVM::FlashMemory::Physical_Page_Address>> valid_blocks;
     
-    				unsigned int target_channel = plane_address.ChannelID;
-    				unsigned int target_chip = plane_address.ChipID;
-    				unsigned int target_die = plane_address.DieID;
-    
     				for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
     				    NVM::FlashMemory::Physical_Page_Address current_plane_addr(
     				        target_channel, target_chip, target_die, plane_id, 0, 0
@@ -186,11 +184,6 @@ namespace SSD_Components
 				    // 收集当前Die内所有符合条件的块（同Channel、Chip、Die下的所有Plane）
 				    std::vector<std::pair<flash_block_ID_type, unsigned int>> valid_blocks; // 存储<块ID, 所在PlaneID>
 				
-				    // 获取当前Die的固定信息（从输入的plane_address继承）
-				    unsigned int target_channel = plane_address.ChannelID;
-				    unsigned int target_chip = plane_address.ChipID;
-				    unsigned int target_die = plane_address.DieID;
-				
 				    // 遍历当前Die下的所有Plane
 				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
 				        // 构建当前Plane的地址
@@ -243,10 +236,6 @@ namespace SSD_Components
 				{
 				    std::vector<std::pair<flash_block_ID_type, unsigned int>> valid_blocks; // 存储<块ID, 所在PlaneID>
 				
-				    unsigned int target_channel = plane_address.ChannelID;
-				    unsigned int target_chip = plane_address.ChipID;
-				    unsigned int target_die = plane_address.DieID;
-				
 				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
 				        NVM::FlashMemory::Physical_Page_Address current_plane_addr(
 				            target_channel, target_chip, target_die, plane_id, 0, 0
@@ -296,10 +285,6 @@ namespace SSD_Components
 				case SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_PP_Die:
 				{
 				    std::vector<std::pair<flash_block_ID_type, unsigned int>> valid_blocks; // 存储<块ID, 所在PlaneID>
-				
-				    unsigned int target_channel = plane_address.ChannelID;
-				    unsigned int target_chip = plane_address.ChipID;
-				    unsigned int target_die = plane_address.DieID;
 				
 				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
 				        NVM::FlashMemory::Physical_Page_Address current_plane_addr(
@@ -356,10 +341,29 @@ namespace SSD_Components
 					break;
 			}
 
-			//This should never happen, but we check it here for safty
-			if (pbke->Ongoing_erase_operations.find(gc_candidate_block_id) != pbke->Ongoing_erase_operations.end()) {
-				return;
+			// 遍历当前Die下的所有Plane，检查候选块是否在任何Plane的正在擦除列表中
+			bool is_being_erased = false;
+			for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+			    // 构建当前Plane的地址
+			    NVM::FlashMemory::Physical_Page_Address current_plane_addr(
+			        target_channel, target_chip, target_die, plane_id, 0, 0
+			    );
+			    // 获取当前Plane的bookkeeping对象
+			    PlaneBookKeepingType* current_pbke = block_manager->Get_plane_bookkeeping_entry(current_plane_addr);
+			
+			    if (current_pbke->Ongoing_erase_operations.find(gc_candidate_block_id) != current_pbke->Ongoing_erase_operations.end()) {
+			        is_being_erased = true;
+			        break;
+			    }
 			}
+			if (is_being_erased) {
+			    return;
+			}
+
+			////This should never happen, but we check it here for safty
+			//if (pbke->Ongoing_erase_operations.find(gc_candidate_block_id) != pbke->Ongoing_erase_operations.end()) {
+			//	return;
+			//}
 			
 			NVM::FlashMemory::Physical_Page_Address gc_candidate_address(plane_address);
 			gc_candidate_address.BlockID = gc_candidate_block_id;
