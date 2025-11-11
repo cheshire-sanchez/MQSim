@@ -157,30 +157,65 @@ namespace SSD_Components
 				NVM_Transaction_Flash_ER* gc_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, pbke->Blocks[gc_candidate_block_id].Stream_id, gc_candidate_address);
 				//If there are some valid pages in block, then prepare flash transactions for page movement
 				if (block->Current_page_write_index - block->Invalid_page_count > 0) {
-					NVM_Transaction_Flash_RD* gc_read = NULL;
-					NVM_Transaction_Flash_WR* gc_write = NULL;
-					for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
-						if (block_manager->Is_page_valid(block, pageID)) {
-							Stats::Total_page_movements_for_gc++;
-							gc_candidate_address.PageID = pageID;
-							if (use_copyback) {
-								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-									NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-								gc_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
-								tsu->Submit_transaction(gc_write);
-							} else {
-								gc_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-									NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), gc_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
-									NO_LPA, NO_PPA, gc_candidate_address, NULL, 0, gc_read, 0, INVALID_TIME_STAMP);
-								gc_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
-								gc_write->RelatedErase = gc_erase_tr;
-								gc_read->RelatedWrite = gc_write;
-								tsu->Submit_transaction(gc_read);//Only the read transaction would be submitted. The Write transaction is submitted when the read transaction is finished and the LPA of the target page is determined
-							}
-							gc_erase_tr->Page_movement_activities.push_back(gc_write);
-						}
-					}
+				    NVM_Transaction_Flash_RD* gc_read = NULL;
+				    NVM_Transaction_Flash_WR* gc_write = NULL;
+								
+				    // 1. 确定当前Die的范围（与GC候选块同属一个Die）
+				    unsigned int target_channel = gc_candidate_address.ChannelID;
+				    unsigned int target_chip = gc_candidate_address.ChipID;
+				    unsigned int target_die = gc_candidate_address.DieID;
+				    unsigned int best_plane_id = gc_candidate_address.PlaneID; // 默认使用原Plane
+				    unsigned int max_free_blocks = 0;
+								
+				    // 2. 遍历当前Die内的所有Plane，找到Free Block最多的Plane
+				    for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+				        // 构造当前Plane的地址（仅用于查询空闲块数量）
+				        NVM::FlashMemory::Physical_Page_Address temp_addr(
+				            target_channel, target_chip, target_die, plane_id, 0, 0
+				        );
+				        unsigned int current_free = block_manager->Get_pool_size(temp_addr);
+					
+				        // 记录Free Block最多的Plane（相同数量时选ID最小的）
+				        if (current_free > max_free_blocks) {
+				            max_free_blocks = current_free;
+				            best_plane_id = plane_id;
+				        }
+				    }
+				
+				    // 3. 遍历有效页，在最优Plane中分配地址并写回
+				    for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
+				        if (block_manager->Is_page_valid(block, pageID)) {
+				            Stats::Total_page_movements_for_gc++;
+				            gc_candidate_address.PageID = pageID;
+						
+				            // 4. 构造目标Plane的写回地址
+				            NVM::FlashMemory::Physical_Page_Address writeback_addr(
+				                target_channel, target_chip, target_die, best_plane_id, 0, 0
+				            );
+				            // 在最优Plane中分配空闲块和页
+				            block_manager->Allocate_block_and_page_in_plane_for_gc_write(
+				                block->Stream_id, writeback_addr
+				            );
+						
+				            if (use_copyback) {
+				                gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+				                    NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
+				                gc_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
+				                gc_write->Address = writeback_addr; // 更新目标地址为最优Plane
+				                tsu->Submit_transaction(gc_write);
+				            } else {
+				                gc_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+				                    NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), gc_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
+				                gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+				                    NO_LPA, address_mapping_unit->Convert_address_to_ppa(writeback_addr), writeback_addr, NULL, 0, gc_read, 0, INVALID_TIME_STAMP);
+				                gc_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
+				                gc_write->RelatedErase = gc_erase_tr;
+				                gc_read->RelatedWrite = gc_write;
+				                tsu->Submit_transaction(gc_read); // 读事务提交后，写事务会在后续触发
+				            }
+				            gc_erase_tr->Page_movement_activities.push_back(gc_write);
+				        }
+				    }
 				}
 				block->Erase_transaction = gc_erase_tr;
 				tsu->Submit_transaction(gc_erase_tr);
