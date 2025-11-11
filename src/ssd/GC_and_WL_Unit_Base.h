@@ -14,15 +14,19 @@ namespace SSD_Components
 {
 	enum class GC_Block_Selection_Policy_Type {
 		GREEDY,
+		GREEDY_Die,
 		RGA,						/*The randomized-greedy algorithm described in: "B. Van Houdt, A Mean Field Model
 									for a Class of Garbage Collection Algorithms in Flash - based Solid State Drives,
 									SIGMETRICS, 2013" and "Stochastic Modeling of Large-Scale Solid-State Storage
 									Systems: Analysis, Design Tradeoffs and Optimization, SIGMETRICS, 2013".*/
+		RGA_Die,
 		RANDOM, RANDOM_P, RANDOM_PP,/*The RANDOM, RANDOM+, and RANDOM++ algorithms described in: "B. Van Houdt, A Mean
 									Field Model  for a Class of Garbage Collection Algorithms in Flash - based Solid
 									State Drives, SIGMETRICS, 2013".*/
-		FIFO						/*The FIFO algortihm described in P. Desnoyers, "Analytic  Modeling  of  SSD Write
+		RANDOM_Die, RANDOM_P_Die, RANDOM_PP_Die,
+		FIFO,						/*The FIFO algortihm described in P. Desnoyers, "Analytic  Modeling  of  SSD Write
 									Performance, SYSTOR, 2012".*/
+		FIFO_Die
 	};
 
 	class Address_Mapping_Unit_Base;

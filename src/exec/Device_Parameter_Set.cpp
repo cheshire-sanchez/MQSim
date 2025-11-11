@@ -571,6 +571,18 @@ void Device_Parameter_Set::XML_deserialize(rapidxml::xml_node<> *node)
 					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_PP;
 				} else if (strcmp(val.c_str(), "FIFO") == 0) {
 					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::FIFO;
+				} else if (strcmp(val.c_str(), "GREEDY_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::GREEDY_Die;
+				} else if (strcmp(val.c_str(), "RGA_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RGA_Die;
+				} else if (strcmp(val.c_str(), "RANDOM_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_Die;
+				} else if (strcmp(val.c_str(), "RANDOM_P_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_P_Die;
+				} else if (strcmp(val.c_str(), "RANDOM_PP_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RANDOM_PP_Die;
+				} else if (strcmp(val.c_str(), "FIFO_Die") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::FIFO_Die;
 				} else {
 					PRINT_ERROR("Unknown GC block selection policy specified in the SSD configuration file")
 				}

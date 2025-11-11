@@ -52,7 +52,24 @@ namespace SSD_Components
 			}//限制GC并发数
 
 			switch (block_selection_policy) {
+				
 				case SSD_Components::GC_Block_Selection_Policy_Type::GREEDY://Find the set of blocks with maximum number of invalid pages and no free pages
+				{
+					gc_candidate_block_id = 0;
+					if (pbke->Ongoing_erase_operations.find(0) != pbke->Ongoing_erase_operations.end()) {
+						gc_candidate_block_id++;
+					}
+					for (flash_block_ID_type block_id = 1; block_id < block_no_per_plane; block_id++) {
+						if (pbke->Blocks[block_id].Invalid_page_count > pbke->Blocks[gc_candidate_block_id].Invalid_page_count
+							&& pbke->Blocks[block_id].Current_page_write_index == pages_no_per_block
+							&& is_safe_gc_wl_candidate(pbke, block_id)) {
+							gc_candidate_block_id = block_id;
+						}
+					}
+					break;
+				}
+
+				case SSD_Components::GC_Block_Selection_Policy_Type::GREEDY_Die://Find the set of blocks with maximum number of invalid pages and no free pages
 				{
 					gc_candidate_block_id = 0;
 					gc_candidate_plane_id = plane_address.PlaneID;
@@ -77,6 +94,7 @@ namespace SSD_Components
 					
 					break;
 				}
+
 				case SSD_Components::GC_Block_Selection_Policy_Type::RGA:
 				{
 					std::set<flash_block_ID_type> random_set;
@@ -96,6 +114,61 @@ namespace SSD_Components
 					}
 					break;
 				}
+
+				case SSD_Components::GC_Block_Selection_Policy_Type::RGA_Die:
+				{
+    				std::vector<std::pair<flash_block_ID_type, NVM::FlashMemory::Physical_Page_Address>> valid_blocks;
+    
+    				unsigned int target_channel = plane_address.ChannelID;
+    				unsigned int target_chip = plane_address.ChipID;
+    				unsigned int target_die = plane_address.DieID;
+    
+    				for (unsigned int plane_id = 0; plane_id < plane_no_per_die; plane_id++) {
+    				    NVM::FlashMemory::Physical_Page_Address current_plane_addr(
+    				        target_channel, target_chip, target_die, plane_id, 0, 0
+    				    );
+    				    PlaneBookKeepingType* current_pbke = block_manager->Get_plane_bookkeeping_entry(current_plane_addr);
+					
+    				    for (flash_block_ID_type block_id = 0; block_id < block_no_per_plane; block_id++) {
+    				        // 检查块是否符合条件：不在擦除中且是安全的GC候选
+    				        if (current_pbke->Ongoing_erase_operations.find(block_id) == current_pbke->Ongoing_erase_operations.end() &&
+    				            is_safe_gc_wl_candidate(current_pbke, block_id)) {
+    				            valid_blocks.emplace_back(block_id, current_plane_addr);
+    				        }
+    				    }
+    				}
+
+    				if (valid_blocks.empty()) {
+    				    break;
+    				}
+    
+    				// 从有效块中随机选择rga_set_size个（若有效块不足，则全部选中）
+    				std::set<size_t> selected_indices;
+    				while (selected_indices.size() < rga_set_size && selected_indices.size() < valid_blocks.size()) {
+    				    size_t random_idx = random_generator.Uniform_uint(0, valid_blocks.size() - 1);
+    				    selected_indices.insert(random_idx);
+    				}
+    
+    				// 从选中的集合中筛选无效页最多且写满的块
+    				gc_candidate_block_id = valid_blocks[*selected_indices.begin()].first;
+    				gc_candidate_plane_id = valid_blocks[*selected_indices.begin()].second.PlaneID;
+    				PlaneBookKeepingType* initial_pbke = block_manager->Get_plane_bookkeeping_entry(valid_blocks[*selected_indices.begin()].second);
+    				unsigned int max_invalid_count = initial_pbke->Blocks[gc_candidate_block_id].Invalid_page_count;
+								
+    				for (size_t idx : selected_indices) {
+    				    auto& [block_id, plane_addr] = valid_blocks[idx];
+    				    PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_addr);
+					
+    				    if (pbke->Blocks[block_id].Invalid_page_count > max_invalid_count &&
+    				        pbke->Blocks[block_id].Current_page_write_index == pages_no_per_block) {
+    				        max_invalid_count = pbke->Blocks[block_id].Invalid_page_count;
+    				        gc_candidate_block_id = block_id;
+    				        gc_candidate_plane_id = plane_addr.PlaneID;
+    				    }
+    				}
+    				break;
+				}
+				
 				case SSD_Components::GC_Block_Selection_Policy_Type::RANDOM:
 				{
 					gc_candidate_block_id = random_generator.Uniform_uint(0, block_no_per_plane - 1);
