@@ -18,7 +18,7 @@ namespace SSD_Components
 		ChannelCount, chip_no_per_channel, die_no_per_chip, plane_no_per_die, block_no_per_plane, Page_no_per_block, sectors_per_page, use_copyback, rho, max_ongoing_gc_reqs_per_plane, 
 			dynamic_wearleveling_enabled, static_wearleveling_enabled, static_wearleveling_threshold, seed)
 	{
-		rga_set_size = (unsigned int)log2(block_no_per_plane);
+		rga_set_size = (unsigned int)log2(plane_no_per_die * block_no_per_plane);
 	}
 	
 	bool GC_and_WL_Unit_Page_Level::GC_is_in_urgent_mode(const NVM::FlashMemory::Flash_Chip* chip)
